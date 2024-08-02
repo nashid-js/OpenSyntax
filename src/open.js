@@ -1,35 +1,41 @@
 "use strict";
 function range(i, ln) {
-	if (!Number.isInteger(i)) { throw new Error(`Error: check line ${ln + 1} or above, maybe you used mixed indentions`) }
+	if (!Number.isInteger(i)) { throw new Error(`Error: check line ${ln + 1} or above, maybe you used mixed indentions (range:${i})`) }
 	return [...Array(i).keys()]
 }
 function firstWord(str) {
 	return str.trim().split(" ")[0]
 }
-function indentionLevelOf(line, indention) {
-	const whiteSpaces = line.slice(0, line.indexOf(firstWord(line)[0]));
-	return whiteSpaces.length / indention;
-}
 function findIndention(lines) {
-	let indention = 0
 	for (let line of lines) {
-		if (line.startsWith(" ") || line.startsWith("\t") && line.trim()) {
-			const indentions = line.slice(0, line.indexOf(firstWord(line)));
-			return indentions
+		if ((line.startsWith(" ") || line.startsWith("\t")) && line.trim()) {
+			return line.slice(0, line.indexOf(firstWord(line)))
+                .replace(/\t/g,"    ").length	// replacing tab to make a tab equals to 4 spaces
 		}
 	}
 }
-function manageSemiColon(content, context, obstacle) {
-	
-	if (content.endsWith(";") || context > 0 ||
-		!content || content.endsWith(",")) {
-		return ""
-	} else if (obstacle.length) {
-		obstacle.pop()
-		return ""
-	} else {
-		return ";"
+function manageSemiColon(content, lastCharacter, context, obstacle) {
+
+	if(content){
+		switch (lastCharacter) {
+			// when this character found at end, we sholdn't add semicolon
+			case ';':	
+			case ',':
+			case '=':
+			case '{':
+			case '[':
+			case '(':
+			  return "";
+		}
+		if (obstacle.length) {	// check obstacle
+			obstacle.pop()
+			return ""
+		}
+
+		return ";"	
 	}
+	return ""	// no code found on this line
+	
 }
 function getContexts(lines) {
 	let stack = [];
@@ -67,21 +73,35 @@ function getContexts(lines) {
 
 	return contexts;
 }
-
+function indentionOf(line){
+    return line.slice(0, line.indexOf(firstWord(line)))
+        .replace(/\t/g,"    ").length	// replacing tab to make a tab equals to 4 spaces
+}
+function findlastCharacter(content){
+	let lastCharacter = content.slice(content.length-2,content.length)
+	switch(lastCharacter){
+		case "->":
+		case "=>":
+		case "=:":
+			return lastCharacter
+		default:
+			return lastCharacter[1]
+	}
+}
 
 
 
 function jsips(js) {
-	const lines = js.split("\n")
-	const scriptIndention = findIndention(lines)
-
-	let inside = 0
+	
+	let insideLevel = 0
 	let output = ""
-
+	
+	const lines = js.split("\n")
+	const scriptIndentionLength = findIndention(lines)
 	const contexts = getContexts(lines)
-	const stack = []
+	const stack = []	// to store closing braces
 	const comment = []
-	const obstacle = []
+	const obstacle = []		// obstacles for semiColons
 	const statements = [
 		"if","else","function","try","catch",
 		"switch",	//no 'case' and 'default', they don't need brackets
@@ -99,113 +119,147 @@ function jsips(js) {
 
 
 		const content = line.trim()
+		const lastCharacter = findlastCharacter(content)
+		const firstCharacter = content[0]
 		const ln = parseInt(index)	//line number
-		const currentIndentions = line.slice(0, line.indexOf(firstWord(line))).length
-		const diff = inside - currentIndentions
+		const currentIndentionsLength = indentionOf(line)
+		const diffLevel = insideLevel - (currentIndentionsLength/scriptIndentionLength)  // this is the level of difference 
 		const context = contexts[ln]
-		const semiColon = manageSemiColon(content, context, obstacle)	//semiColon for this line
+		const semiColon = manageSemiColon(content,lastCharacter, context, obstacle)	//semiColon for this line
 
-		//manage braces on indention difference
-		if (diff > 0 && content) {
-			const diffLevel = diff / scriptIndention.length
+		
+		
+		//manage braces on indention diffLevelerence
+		if (diffLevel > 0 && content) {
+
 			for (let i in range(diffLevel, ln)) {
 
-				if (stack[stack.length - 1] == ")" && output.endsWith(";")) {
+				if (stack[stack.length - 1].includes(')') && output.endsWith(";")) {
 					output = output.slice(0, -1)
-				} else if (stack[stack.length - 1] == "}" && output.endsWith(",")) {
+					output += stack.pop()
+				} else if (stack[stack.length - 1].includes('}') && output.endsWith(",")) {
+					// needed to work ',' after functions in objescts
 					output = output.slice(0, -1)
 					output += stack.pop() + ","
 				} else if (stack.length) {
 					output += stack.pop()
 				}
-
 			}
-			inside -= diff
+			insideLevel -= diffLevel
 		}
 
 
+		if (output.endsWith(";")){
+			switch(firstCharacter){
+				case ".":
+				case "(":
+				case "[":
+				case "{":
+					output= output.slice(0,-1)
+			}
+		}
+
 		// format lines that endswith ':','=>','->'
-		 if (content.endsWith(":") || content.endsWith("=>") || content.endsWith("->")) {
-
-
-			let statement = content.split(" ")[0].replace(":", "")
-
-			if(context==3 && content.split(":").length-1 > 1){
-				statement = content.slice(content.indexOf(":")+1,content.length)
-					.trim().split(" ")[0].replace(":", "")
-			}
-
-			const newIndention = currentIndentions + scriptIndention.length
-			if(newIndention-inside >1){
-				for(let extraIndention in range(newIndention-1)){
-					stack.push("")
-				}
-			}
-
-			//	inside+=scriptIndention.length
-			inside =newIndention
+		switch (lastCharacter){
+			case ":" :
+			case "=>":
+			case ">":
+				let statement = content.split(" ")[0].replace(":", "")
 			
-			if(statements.includes(statement)){
+				if(context==3 && content.split(":").length-1 > 1){	// if there is multiple ':' 
+					statement = content.slice(content.indexOf(":")+1,content.length)
+						.trim().split(" ")[0].replace(":", "")
+				}
+				// make new indention to update insideLevel which currentIndention + one indention 
+				const newIndentionLevel = (currentIndentionsLength + scriptIndentionLength)/scriptIndentionLength
 
-				const indexofStatement = content.indexOf(statement);
-				const args = content.slice(  //from if to ':'
-					indexofStatement + statement.length + 1,
-					content.lastIndexOf(":")).trim()
-				//elif to else if
-				if (statement === "elif") { statement = "else if" }
-				//needed for 'catch' to work normally
-				if (output.endsWith(";") && statement.includes("catch")) {
-					output = output.slice(0, -1)
+				if(newIndentionLevel-insideLevel >1){
+					for(let extraIndention in range(newIndentionLevel-1,ln)){
+						stack.push("")
+					}
 				}
 
-
-				// add '{' after functions
-				if (statement == "function") {
-					output += content.slice(0, -1) + "{";
-				} else {
-					//						check args present 
-					output += `${statement}${args ? '(' + args + ')' : ''}{`
-				}
-
+				// we're only updating insideLevel here
+				//	insideLevel+=scriptIndentionLength
+				insideLevel =newIndentionLevel
 				
-				//Manage indentions
-				if (statement == "if" || statement == "else if") {
-					//if and elseif not need semiColon
-					stack.push("}");
-				} else {
-					stack.push("}" + semiColon);
-				}
-				
-			}else if (content.endsWith("=>")) {
-				output += content + "{"
-				stack.push("}" + semiColon)
-			} else if (content.endsWith("=:")) {
-				output += content.slice(0,-1) + "{"
-				stack.push("}" + semiColon)
-				obstacle.push(null)
-			} else if (content.endsWith("->")) {
-				output += content.slice(0,-2)+ "("
-				stack.push(")" + semiColon)
-				obstacle.push(null)
-			}else if (statement=="case" || statement == "default") {
-				output += content
-				stack.push("")
-			}else {
-				output+=content
-			}
+				if(statements.includes(statement)){
 
-		} else {
-			//add all other lines with semiColon
-			output += content + semiColon
+					const indexofStatement = content.indexOf(statement);
+					const args = content.slice(  //from if to ':'
+						indexofStatement + statement.length + 1,
+						content.lastIndexOf(":")).trim()
+					//elif to else if
+					if (statement === "elif") { statement = "else if" }
+					//needed for 'catch' to work normally
+					if (output.endsWith(";") && statement.includes("catch")) {
+						output = output.slice(0, -1)
+					}
+
+
+					// add '{' after functions
+					if (statement == "function") {
+						output += content.slice(0, -1) + "{";
+					} else {
+						//						check args present 
+						output += `${statement}${args ? '(' + args + ')' : ''}{`
+					}
+
+					
+					//Manage indentions
+					if (statement == "if" || statement == "else if") {
+						//if and elseif not need semiColon
+						stack.push("}");
+					} else {
+						stack.push("}" + semiColon);
+					}
+					
+				}else if (lastCharacter == "=>") {
+					output += content + "{"
+					stack.push("}" + semiColon)
+				} else if (lastCharacter == "=:") {
+					output += content.slice(0,-1) + "{"
+					stack.push("}" + semiColon)
+					obstacle.push(null)
+				} else if (lastCharacter == "->") {
+					output += content.slice(0,-2)+ "("
+					stack.push(")" + semiColon)
+					obstacle.push(null)
+				}else if (statement=="case" || statement == "default") {
+					output += content
+					stack.push("")
+				}else {
+					output+=content
+				}
+
+				break;
+
+			case "(" :
+			case "[":
+			case "{":
+				//object or arry or function parameter etc declartion
+				obstacle.push(null)
+				output += content + semiColon
+
+				break;
+			
+			default:
+				//add all other lines with semiColon
+				output += content + semiColon
+			
 		}
 
 
 
 		//add remining semiColon if last line
-		if (ln == (lines.length - 1) && (inside > 0 || stack)) {
+		if (ln == (lines.length - 1) && (insideLevel > 0 || stack)) {
 			stack.findLast((tag) => {
 				if (tag.includes(")") && output.endsWith(";")) {
 					output = output.slice(0, output.length - 1)
+				} else if (stack[stack.length - 1].includes('}') && output.endsWith(",")) {
+					// needed to work ',' after functions in objescts
+					output = output.slice(0, -1)
+					output += + ","
 				}
 				output += tag
 			})
@@ -213,8 +267,6 @@ function jsips(js) {
 		if (comment.length) {
 			output += comment.pop()
 		}
-
-
 	}
     return output
 }

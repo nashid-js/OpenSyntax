@@ -3,6 +3,7 @@
   "displayName": "openSyntax",
   "description": "A simple JavaScript preprocessor",
   "version": "0.0.1",
+  "icon":"./src/img/open-source.png",
   "engines": {
     "vscode": "^1.91.0"
   },

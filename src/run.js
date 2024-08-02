@@ -8,7 +8,7 @@ function runTerminal(command) {
     if (!terminal) {
         terminal = vscode.window.createTerminal('powershell');
     }
-    terminal.show();
+    terminal.show(true);    //'true' for preserve focus on editor
     terminal.sendText(command);
 }
 
@@ -45,9 +45,6 @@ function newFile(fileName, content) {
 
 function Run() {
 
-    // Display a message box to the user
-    // vscode.window.showInformationMessage('Hello World from openSyntax!');
-    
     const activeEditor = vscode.window.activeTextEditor;
     if (!activeEditor) {
 
@@ -64,11 +61,12 @@ function Run() {
             vscode.window.showInformationMessage(`Success!`);
         })
         .catch(error => {
-            vscode.window.showInformationMessage
-            (error);
+            vscode.window.showInformationMessage(error);
         });
 
     runTerminal(`node ${newName}`)
+    
+    
 };
 
 module.exports = {Run};
